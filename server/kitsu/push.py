@@ -22,6 +22,7 @@ from .utils import (
     create_task,
     delete_entity_link,
     delete_folder,
+    folder_has_products,
     delete_task,
     get_folder_by_kitsu_id,
     get_links_for_output,
@@ -449,6 +450,15 @@ async def sync_folder(
         )
         existing_folders[entity_dict["id"]] = target_folder.id
 
+    elif (
+            target_folder.data["asset_type_name"]
+            != entity_dict["asset_type_name"]
+        ):
+        # if not await folder_has_products(project.name, target_folder.id):
+        if not target_folder.has_versions():
+            # target_folder._payload.path =  # TODO get path
+            await create_folder(project.name, entity_dict["name"])
+            await delete_folder(project.name, target_folder.id, user)
     else:
         # Calculate the end-frame
         data["frame_out"] = calculate_end_frame(entity_dict, target_folder)

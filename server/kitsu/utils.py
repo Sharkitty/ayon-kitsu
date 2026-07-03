@@ -7,6 +7,7 @@ from nxtools import slugify, logging
 from ayon_server.entities import (
     ProjectEntity,
     FolderEntity,
+    ProductEntity,
     TaskEntity,
     UserEntity,
 )
@@ -192,6 +193,27 @@ async def delete_folder(
         "project": project_name,
     }
     await dispatch_event(**event)
+
+
+async def folder_has_products(project_name: str, folder_id: str) -> bool:
+    """Check if a folder has products.
+
+    Args:
+        project_name (str): Project name.
+        folder_id (str): Folder id.
+
+    Returns:
+        bool: Folder has products.
+    """
+    res = await Postgres.fetch(
+        f"""
+        SELECT products FROM project_{project_name}.folders
+        WHERE data->>'folderId' = $1
+        """,
+        folder_id,
+    )
+
+    return True if res else False
 
 
 async def create_task(
