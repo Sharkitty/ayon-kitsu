@@ -122,6 +122,32 @@ async def get_root_folder_id(
     return sub_id
 
 
+async def get_parent_folder_id(project, entity_dict, existing_folders, user):
+    if entity_dict.get("parent_id") is None:
+        return await get_root_folder_id(
+            user=user,
+            project_name=project.name,
+            kitsu_type=f"{entity_dict['type']}s",
+            kitsu_type_id=entity_dict["type"].lower(),
+        )
+    else:
+        if entity_dict.get("parent_id") in existing_folders:
+            return existing_folders[entity_dict["parent_id"]]
+        else:
+            parent_folder = await get_folder_by_kitsu_id(
+                project.name,
+                entity_dict["parent_id"],
+                existing_folders,
+            )
+            if parent_folder is None:
+                logging.warning(
+                    f"Parent folder for {entity_dict['type']}"
+                    f" {entity_dict['name']} not found. Skipping."  # noqa
+                )
+                return
+            return parent_folder.id
+
+
 async def create_access_group(
     addon: "KitsuAddon",
     user: "UserEntity",
@@ -393,30 +419,6 @@ async def sync_folder(
                     subfolder_name=entity_dict["asset_type_name"],
                 )
                 existing_folders[entity_dict["entity_type_id"]] = parent_id
-        elif entity_dict["type"] in get_args(KitsuEntityType):
-            if entity_dict.get("parent_id") is None:
-                parent_id = await get_root_folder_id(
-                    user=user,
-                    project_name=project.name,
-                    kitsu_type=f"{entity_dict['type']}s",
-                    kitsu_type_id=entity_dict["type"].lower(),
-                )
-            else:
-                if entity_dict.get("parent_id") in existing_folders:
-                    parent_id = existing_folders[entity_dict["parent_id"]]
-                else:
-                    parent_folder = await get_folder_by_kitsu_id(
-                        project.name,
-                        entity_dict["parent_id"],
-                        existing_folders,
-                    )
-                    if parent_folder is None:
-                        logging.warning(
-                            f"Parent folder for {entity_dict['type']}"
-                            f" {entity_dict['name']} not found. Skipping."  # noqa
-                        )
-                        return
-                    parent_id = parent_folder.id
         else:
             logging.warning("Unsupported entity type: ", entity_dict["type"])
             return
@@ -450,16 +452,32 @@ async def sync_folder(
         )
         existing_folders[entity_dict["id"]] = target_folder.id
 
-    elif (
-            target_folder.data["asset_type_name"]
-            != entity_dict["asset_type_name"]
-        ):
-        # if not await folder_has_products(project.name, target_folder.id):
-        if not target_folder.has_versions():
-            # target_folder._payload.path =  # TODO get path
-            await create_folder(project.name, entity_dict["name"])
-            await delete_folder(project.name, target_folder.id, user)
     else:
+        parent_id = await get_parent_folder_id(
+            project, entity_dict, existing_folders, user
+        )
+        if (
+            parent_id != target_folder.parent_id
+            and not target_folder.has_versions
+        ):
+            logging.info(f"moving folder {target_folder.name}")
+            # target_folder._payload.path =  # TODO get path
+            await create_folder(
+                project_name=project.name,
+                attrib=parse_attrib(data),
+                name=entity_dict["name"],
+                folder_type=entity_dict["type"],
+                parent_id=parent_id,
+                data={"kitsuId": entity_dict["id"]},
+            )
+            await delete_folder(project.name, target_folder.id, user)
+            # payload = PushEntitiesRequestModel(project_name=project.name, entities=[entity_dict])
+            # await push_entities(
+            #     addon,
+            #     user,
+            #     payload,
+            # )
+
         # Calculate the end-frame
         data["frame_out"] = calculate_end_frame(entity_dict, target_folder)
 
